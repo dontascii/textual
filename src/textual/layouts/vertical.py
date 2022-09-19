@@ -1,41 +1,60 @@
 from __future__ import annotations
 
-from typing import Iterable, TYPE_CHECKING
+from fractions import Fraction
+from typing import cast, TYPE_CHECKING
 
-from ..css.styles import Styles
-from ..geometry import Offset, Region, Size
-from ..layout import Layout, WidgetPlacement
+from ..geometry import Region, Size
+from .._layout import ArrangeResult, Layout, WidgetPlacement
 
 if TYPE_CHECKING:
     from ..widget import Widget
-    from ..view import View
 
 
 class VerticalLayout(Layout):
-    def get_widgets(self, view: View) -> Iterable[Widget]:
-        return view.children
+    """Used to layout Widgets vertically on screen, from top to bottom."""
+
+    name = "vertical"
 
     def arrange(
-        self, view: View, size: Size, scroll: Offset
-    ) -> Iterable[WidgetPlacement]:
-        parent_width, parent_height = size
-        x, y = 0, 0
+        self, parent: Widget, children: list[Widget], size: Size
+    ) -> ArrangeResult:
 
-        for widget in view.children:
-            styles: Styles = widget.styles
+        placements: list[WidgetPlacement] = []
+        add_placement = placements.append
 
-            if styles.height:
-                render_height = int(
-                    styles.height.resolve_dimension(size, view.app.size)
+        parent_size = parent.outer_size
+
+        styles = [child.styles for child in children if child.styles.height is not None]
+        total_fraction = sum(
+            [int(style.height.value) for style in styles if style.height.is_fraction]
+        )
+        fraction_unit = Fraction(size.height, total_fraction or 1)
+
+        box_models = [
+            widget._get_box_model(size, parent_size, fraction_unit)
+            for widget in children
+        ]
+
+        margins = [
+            max((box1.margin.bottom, box2.margin.top))
+            for box1, box2 in zip(box_models, box_models[1:])
+        ]
+        if box_models:
+            margins.append(box_models[-1].margin.bottom)
+
+        y = Fraction(box_models[0].margin.top if box_models else 0)
+
+        for widget, box_model, margin in zip(children, box_models, margins):
+            content_width, content_height, box_margin = box_model
+            offset_x = (
+                widget.styles.align_width(
+                    int(content_width), size.width - box_margin.width
                 )
-            else:
-                render_height = size.height
+                + box_model.margin.left
+            )
+            next_y = y + content_height
+            region = Region(offset_x, int(y), int(content_width), int(next_y) - int(y))
+            add_placement(WidgetPlacement(region, box_model.margin, widget, 0))
+            y = next_y + margin
 
-            if styles.width:
-                render_width = int(styles.width.resolve_dimension(size, view.app.size))
-            else:
-                render_width = parent_width
-
-            region = Region(x, y, render_width, render_height)
-            yield WidgetPlacement(region, widget, 0)
-            y += render_height
+        return placements, set(children)

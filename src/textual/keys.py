@@ -14,6 +14,7 @@ class Keys(str, Enum):
 
     value: str
 
+    Space = "space"
     Escape = "escape"  # Also Control-[
     ShiftEscape = "shift+escape"
     Return = "return"
@@ -180,7 +181,6 @@ class Keys(str, Enum):
     CPRResponse = "<cursor-position-response>"
     Vt100MouseEvent = "<vt100-mouse-event>"
     WindowsMouseEvent = "<windowshift+mouse-event>"
-    BracketedPaste = "<bracketed-paste>"
 
     # For internal use: key which is ignored.
     # (The key binding for this key should not do anything.)
@@ -200,8 +200,4 @@ class Keys(str, Enum):
     ShiftControlEnd = ControlShiftEnd
 
 
-@dataclass
-class Binding:
-    action: str
-    description: str
-    show: bool = False
+KEY_VALUES = frozenset(Keys.__members__.values())

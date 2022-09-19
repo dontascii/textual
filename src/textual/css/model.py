@@ -29,13 +29,16 @@ class CombinatorType(Enum):
 
 
 @dataclass
-class Location:
-    line: tuple[int, int]
-    column: tuple[int, int]
-
-
-@dataclass
 class Selector:
+    """Represents a CSS selector.
+
+    Some examples of selectors:
+
+    *
+    Header.title
+    App > Content
+    """
+
     name: str
     combinator: CombinatorType = CombinatorType.DESCENDENT
     type: SelectorType = SelectorType.TYPE
@@ -46,6 +49,7 @@ class Selector:
 
     @property
     def css(self) -> str:
+        """Rebuilds the selector as it would appear in CSS."""
         pseudo_suffix = "".join(f":{name}" for name in self.pseudo_classes)
         if self.type == SelectorType.UNIVERSAL:
             return "*"
@@ -76,13 +80,21 @@ class Selector:
         self.specificity = (specificity1, specificity2 + 1, specificity3)
 
     def check(self, node: DOMNode) -> bool:
+        """Check if a given node matches the selector.
+
+        Args:
+            node (DOMNode): A DOM node.
+
+        Returns:
+            bool: True if the selector matches, otherwise False.
+        """
         return self._checks[self.type](node)
 
     def _check_universal(self, node: DOMNode) -> bool:
-        return True
+        return node.has_pseudo_class(*self.pseudo_classes)
 
     def _check_type(self, node: DOMNode) -> bool:
-        if node.css_type != self._name_lower:
+        if self._name_lower not in node._css_type_names:
             return False
         if self.pseudo_classes and not node.has_pseudo_class(*self.pseudo_classes):
             return False
@@ -121,6 +133,10 @@ class SelectorSet:
         for selector, next_selector in zip(self.selectors, self.selectors[1:]):
             selector.advance = int(next_selector.combinator != SAME)
 
+    @property
+    def css(self) -> str:
+        return RuleSet._selector_to_css(self.selectors)
+
     def __rich_repr__(self) -> rich.repr.Result:
         selectors = RuleSet._selector_to_css(self.selectors)
         yield selectors
@@ -143,7 +159,13 @@ class RuleSet:
     selector_set: list[SelectorSet] = field(default_factory=list)
     styles: Styles = field(default_factory=Styles)
     errors: list[tuple[Token, str]] = field(default_factory=list)
-    classes: set[str] = field(default_factory=set)
+
+    is_default_rules: bool = False
+    tie_breaker: int = 0
+    selector_names: set[str] = field(default_factory=set)
+
+    def __hash__(self):
+        return id(self)
 
     @classmethod
     def _selector_to_css(cls, selectors: list[Selector]) -> str:
@@ -177,11 +199,37 @@ class RuleSet:
     def _post_parse(self) -> None:
         """Called after the RuleSet is parsed."""
         # Build a set of the class names that have been updated
-        update = self.classes.update
+
         class_type = SelectorType.CLASS
+        id_type = SelectorType.ID
+        type_type = SelectorType.TYPE
+        universal_type = SelectorType.UNIVERSAL
+
+        update_selectors = self.selector_names.update
+
         for selector_set in self.selector_set:
-            update(
+            update_selectors(
+                "*"
+                for selector in selector_set.selectors
+                if selector.type == universal_type
+            )
+            update_selectors(
                 selector.name
                 for selector in selector_set.selectors
+                if selector.type == type_type
+            )
+            update_selectors(
+                f".{selector.name}"
+                for selector in selector_set.selectors
                 if selector.type == class_type
+            )
+            update_selectors(
+                f"#{selector.name}"
+                for selector in selector_set.selectors
+                if selector.type == id_type
+            )
+            update_selectors(
+                f":{pseudo_class}"
+                for selector in selector_set.selectors
+                for pseudo_class in selector.pseudo_classes
             )

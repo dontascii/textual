@@ -1,21 +1,18 @@
-from textual.dom import DOMNode
+from textual.widget import Widget
 
 
 def test_query():
-    class Widget(DOMNode):
+    class View(Widget):
         pass
 
-    class View(DOMNode):
-        pass
-
-    class App(DOMNode):
+    class App(Widget):
         pass
 
     app = App()
     main_view = View(id="main")
     help_view = View(id="help")
-    app.add_child(main_view)
-    app.add_child(help_view)
+    app._add_child(main_view)
+    app._add_child(help_view)
 
     widget1 = Widget(id="widget1")
     widget2 = Widget(id="widget2")
@@ -25,21 +22,21 @@ def test_query():
     helpbar = Widget(id="helpbar")
     helpbar.add_class("float")
 
-    main_view.add_child(widget1)
-    main_view.add_child(widget2)
-    main_view.add_child(sidebar)
+    main_view._add_child(widget1)
+    main_view._add_child(widget2)
+    main_view._add_child(sidebar)
 
     sub_view = View(id="sub")
     sub_view.add_class("-subview")
-    main_view.add_child(sub_view)
+    main_view._add_child(sub_view)
 
     tooltip = Widget(id="tooltip")
     tooltip.add_class("float", "transient")
-    sub_view.add_child(tooltip)
+    sub_view._add_child(tooltip)
 
     help = Widget(id="markdown")
-    help_view.add_child(help)
-    help_view.add_child(helpbar)
+    help_view._add_child(help)
+    help_view._add_child(helpbar)
 
     # repeat tests to account for caching
     for repeat in range(3):
@@ -52,7 +49,15 @@ def test_query():
         assert list(app.query("View#main")) == [main_view]
         assert list(app.query("#widget1")) == [widget1]
         assert list(app.query("#widget2")) == [widget2]
+
         assert list(app.query("Widget.float")) == [sidebar, tooltip, helpbar]
+        assert list(app.query("Widget.float").results(Widget)) == [
+            sidebar,
+            tooltip,
+            helpbar,
+        ]
+        assert list(app.query("Widget.float").results(View)) == []
+
         assert list(app.query("Widget.float.transient")) == [tooltip]
 
         assert list(app.query("App > View")) == [main_view, help_view]

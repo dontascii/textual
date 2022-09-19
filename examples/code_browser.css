@@ -1,0 +1,30 @@
+Screen {
+    background: $surface-darken-1;
+}
+
+#tree-view {
+    display: none;
+    scrollbar-gutter: stable;
+    width: auto;
+}
+
+CodeBrowser.-show-tree #tree-view {
+    display: block;
+    dock: left;
+    height: 100%;            
+    max-width: 50%;
+    background: $surface;    
+}
+
+CodeBrowser{
+    background: $background;    
+}
+
+DirectoryTree {
+    padding-right: 1;   
+    padding-right: 1;
+}
+
+#code {
+    width: auto;
+}

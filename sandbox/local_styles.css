@@ -1,0 +1,11 @@
+App > View {
+  layout: dock;
+}
+
+Widget {
+  text: on blue;
+}
+
+Widget.-highlight {
+  outline: heavy red;
+}

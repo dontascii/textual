@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from functools import lru_cache
-from typing import Iterator, Iterable, Optional
+from pathlib import PurePath
+from typing import Iterator, Iterable, NoReturn, Sequence
 
 from rich import print
-from rich.cells import cell_len
 
-from textual.css.errors import UnresolvedVariableError
+from .errors import UnresolvedVariableError
+from .types import Specificity3
 from ._styles_builder import StylesBuilder, DeclarationError
 from .model import (
     Declaration,
@@ -18,10 +18,11 @@ from .model import (
     SelectorType,
 )
 from .styles import Styles
-from .tokenize import tokenize, tokenize_declarations, Token
+from ..suggestions import get_suggestion
+from .tokenize import tokenize, tokenize_declarations, Token, tokenize_values
 from .tokenizer import EOFError, ReferencedBy
 
-SELECTOR_MAP: dict[str, tuple[SelectorType, tuple[int, int, int]]] = {
+SELECTOR_MAP: dict[str, tuple[SelectorType, Specificity3]] = {
     "selector": (SelectorType.TYPE, (0, 0, 1)),
     "selector_start": (SelectorType.TYPE, (0, 0, 1)),
     "selector_class": (SelectorType.CLASS, (0, 1, 0)),
@@ -47,22 +48,23 @@ def parse_selectors(css_selectors: str) -> tuple[SelectorSet, ...]:
             token = next(tokens)
         except EOFError:
             break
-        if token.name == "pseudo_class":
+        token_name = token.name
+        if token_name == "pseudo_class":
             selectors[-1]._add_pseudo_class(token.value.lstrip(":"))
-        elif token.name == "whitespace":
+        elif token_name == "whitespace":
             if combinator is None or combinator == CombinatorType.SAME:
                 combinator = CombinatorType.DESCENDENT
-        elif token.name == "new_selector":
+        elif token_name == "new_selector":
             rule_selectors.append(selectors[:])
             selectors.clear()
             combinator = None
-        elif token.name == "declaration_set_start":
+        elif token_name == "declaration_set_start":
             break
-        elif token.name == "combinator_child":
+        elif token_name == "combinator_child":
             combinator = CombinatorType.CHILD
         else:
             _selector, specificity = get_selector(
-                token.name, (SelectorType.TYPE, (0, 0, 0))
+                token_name, (SelectorType.TYPE, (0, 0, 0))
             )
             selectors.append(
                 Selector(
@@ -80,7 +82,12 @@ def parse_selectors(css_selectors: str) -> tuple[SelectorSet, ...]:
     return selector_set
 
 
-def parse_rule_set(tokens: Iterator[Token], token: Token) -> Iterable[RuleSet]:
+def parse_rule_set(
+    tokens: Iterator[Token],
+    token: Token,
+    is_default_rules: bool = False,
+    tie_breaker: int = 0,
+) -> Iterable[RuleSet]:
     get_selector = SELECTOR_MAP.get
     combinator: CombinatorType | None = CombinatorType.DESCENDENT
     selectors: list[Selector] = []
@@ -149,7 +156,11 @@ def parse_rule_set(tokens: Iterator[Token], token: Token) -> Iterable[RuleSet]:
             errors.append((error.token, error.message))
 
     rule_set = RuleSet(
-        list(SelectorSet.from_selectors(rule_selectors)), styles_builder.styles, errors
+        list(SelectorSet.from_selectors(rule_selectors)),
+        styles_builder.styles,
+        errors,
+        is_default_rules=is_default_rules,
+        tie_breaker=tie_breaker,
     )
     rule_set._post_parse()
     yield rule_set
@@ -204,21 +215,40 @@ def parse_declarations(css: str, path: str) -> Styles:
     return styles_builder.styles
 
 
-def _unresolved(
-    variable_name: str, location: tuple[int, int]
-) -> UnresolvedVariableError:
-    line_idx, col_idx = location
-    return UnresolvedVariableError(
-        f"reference to undefined variable '${variable_name}' at line {line_idx + 1}, column {col_idx + 1}."
+def _unresolved(variable_name: str, variables: Iterable[str], token: Token) -> NoReturn:
+    """Raise a TokenError regarding an unresolved variable.
+
+    Args:
+        variable_name (str): A variable name.
+        variables (Iterable[str]): Possible choices used to generate suggestion.
+        token (Token): The Token.
+
+    Raises:
+        UnresolvedVariableError: Always raises a TokenError.
+
+    """
+    message = f"reference to undefined variable '${variable_name}'"
+    suggested_variable = get_suggestion(variable_name, list(variables))
+    if suggested_variable:
+        message += f"; did you mean '${suggested_variable}'?"
+
+    raise UnresolvedVariableError(
+        token.path,
+        token.code,
+        token.start,
+        message,
+        end=token.end,
     )
 
 
-def substitute_references(tokens: Iterator[Token]) -> Iterable[Token]:
+def substitute_references(
+    tokens: Iterable[Token], css_variables: dict[str, list[Token]] | None = None
+) -> Iterable[Token]:
     """Replace variable references with values by substituting variable reference
     tokens with the tokens representing their values.
 
     Args:
-        tokens (Iterator[Token]): Iterator of Tokens which may contain tokens
+        tokens (Iterable[Token]): Iterator of Tokens which may contain tokens
             with the name "variable_ref".
 
     Returns:
@@ -228,9 +258,12 @@ def substitute_references(tokens: Iterator[Token]) -> Iterable[Token]:
             but with variables resolved. Substituted tokens will have their referenced_by
             attribute populated with information about where the tokens are being substituted to.
     """
-    variables: dict[str, list[Token]] = defaultdict(list)
+    variables: dict[str, list[Token]] = css_variables.copy() if css_variables else {}
+
+    iter_tokens = iter(tokens)
+
     while tokens:
-        token = next(tokens, None)
+        token = next(iter_tokens, None)
         if token is None:
             break
         if token.name == "variable_name":
@@ -238,7 +271,8 @@ def substitute_references(tokens: Iterator[Token]) -> Iterable[Token]:
             yield token
 
             while True:
-                token = next(tokens, None)
+                token = next(iter_tokens, None)
+                # TODO: Mypy error looks legit
                 if token.name == "whitespace":
                     yield token
                 else:
@@ -250,7 +284,7 @@ def substitute_references(tokens: Iterator[Token]) -> Iterable[Token]:
                 if not token:
                     break
                 elif token.name == "whitespace":
-                    variables[variable_name].append(token)
+                    variables.setdefault(variable_name, []).append(token)
                     yield token
                 elif token.name == "variable_value_end":
                     yield token
@@ -259,7 +293,7 @@ def substitute_references(tokens: Iterator[Token]) -> Iterable[Token]:
                 elif token.name == "variable_ref":
                     ref_name = token.value[1:]
                     if ref_name in variables:
-                        variable_tokens = variables[variable_name]
+                        variable_tokens = variables.setdefault(variable_name, [])
                         reference_tokens = variables[ref_name]
                         variable_tokens.extend(reference_tokens)
                         ref_location = token.location
@@ -267,54 +301,67 @@ def substitute_references(tokens: Iterator[Token]) -> Iterable[Token]:
                         for _token in reference_tokens:
                             yield _token.with_reference(
                                 ReferencedBy(
-                                    name=ref_name,
-                                    location=ref_location,
-                                    length=ref_length,
+                                    ref_name, ref_location, ref_length, token.code
                                 )
                             )
                     else:
-                        raise _unresolved(
-                            variable_name=ref_name, location=token.location
-                        )
+                        _unresolved(ref_name, variables.keys(), token)
                 else:
-                    variables[variable_name].append(token)
+                    variables.setdefault(variable_name, []).append(token)
                     yield token
-                token = next(tokens, None)
+                token = next(iter_tokens, None)
         elif token.name == "variable_ref":
             variable_name = token.value[1:]  # Trim the $, so $x -> x
             if variable_name in variables:
                 variable_tokens = variables[variable_name]
                 ref_location = token.location
                 ref_length = len(token.value)
-                for token in variable_tokens:
-                    yield token.with_reference(
-                        ReferencedBy(
-                            name=variable_name,
-                            location=ref_location,
-                            length=ref_length,
-                        )
+                ref_code = token.code
+                for _token in variable_tokens:
+                    yield _token.with_reference(
+                        ReferencedBy(variable_name, ref_location, ref_length, ref_code)
                     )
             else:
-                raise _unresolved(variable_name=variable_name, location=token.location)
+                _unresolved(variable_name, variables.keys(), token)
         else:
             yield token
 
 
-def parse(css: str, path: str) -> Iterable[RuleSet]:
+def parse(
+    css: str,
+    path: str | PurePath,
+    variables: dict[str, str] | None = None,
+    variable_tokens: dict[str, list[Token]] | None = None,
+    is_default_rules: bool = False,
+    tie_breaker: int = 0,
+) -> Iterable[RuleSet]:
     """Parse CSS by tokenizing it, performing variable substitution,
     and generating rule sets from it.
 
     Args:
         css (str): The input CSS
         path (str): Path to the CSS
+        variables (dict[str, str]): Substitution variables to substitute tokens for.
+        is_default_rules (bool): True if the rules we're extracting are
+            default (i.e. in Widget.DEFAULT_CSS) rules. False if they're from user defined CSS.
     """
-    tokens = iter(substitute_references(tokenize(css, path)))
+
+    reference_tokens = tokenize_values(variables) if variables is not None else {}
+    if variable_tokens:
+        reference_tokens.update(variable_tokens)
+
+    tokens = iter(substitute_references(tokenize(css, path), variable_tokens))
     while True:
         token = next(tokens, None)
         if token is None:
             break
         if token.name.startswith("selector_start"):
-            yield from parse_rule_set(tokens, token)
+            yield from parse_rule_set(
+                tokens,
+                token,
+                is_default_rules=is_default_rules,
+                tie_breaker=tie_breaker,
+            )
 
 
 if __name__ == "__main__":
@@ -333,7 +380,7 @@ if __name__ == "__main__":
     console = Console()
     stylesheet = Stylesheet()
     try:
-        stylesheet.parse(css)
+        stylesheet.add_source(css)
     except StylesheetParseError as e:
         console.print(e.errors)
     print(stylesheet)

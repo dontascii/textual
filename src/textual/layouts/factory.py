@@ -1,22 +1,16 @@
-import sys
+from __future__ import annotations
 
+from .._layout import Layout
+from .center import CenterLayout
 from .horizontal import HorizontalLayout
-from ..layout import Layout
-from ..layouts.dock import DockLayout
-from ..layouts.grid import GridLayout
-from ..layouts.vertical import VerticalLayout
+from .grid import GridLayout
+from .vertical import VerticalLayout
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
-LayoutName = Literal["dock", "grid", "vertical", "horizontal"]
-LAYOUT_MAP = {
-    "dock": DockLayout,
+LAYOUT_MAP: dict[str, type[Layout]] = {
+    "center": CenterLayout,
+    "horizontal": HorizontalLayout,
     "grid": GridLayout,
     "vertical": VerticalLayout,
-    "horizontal": HorizontalLayout,
 }
 
 
@@ -24,7 +18,7 @@ class MissingLayout(Exception):
     pass
 
 
-def get_layout(name: LayoutName) -> Layout:
+def get_layout(name: str) -> Layout:
     """Get a named layout object.
 
     Args:

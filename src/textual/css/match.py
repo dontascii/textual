@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Iterable, TYPE_CHECKING
-from .model import CombinatorType, Selector, SelectorSet, SelectorType
+from .model import CombinatorType, Selector, SelectorSet
 
 
 if TYPE_CHECKING:
@@ -19,11 +19,12 @@ def match(selector_sets: Iterable[SelectorSet], node: DOMNode) -> bool:
         bool: True if the node matches the selector, otherwise False.
     """
     return any(
-        _check_selectors(selector_set.selectors, node) for selector_set in selector_sets
+        _check_selectors(selector_set.selectors, node.css_path_nodes)
+        for selector_set in selector_sets
     )
 
 
-def _check_selectors(selectors: list[Selector], node: DOMNode) -> bool:
+def _check_selectors(selectors: list[Selector], css_path_nodes: list[DOMNode]) -> bool:
     """Match a list of selectors against a node.
 
     Args:
@@ -36,8 +37,8 @@ def _check_selectors(selectors: list[Selector], node: DOMNode) -> bool:
 
     DESCENDENT = CombinatorType.DESCENDENT
 
-    css_path = node.css_path
-    path_count = len(css_path)
+    node = css_path_nodes[-1]
+    path_count = len(css_path_nodes)
     selector_count = len(selectors)
 
     stack: list[tuple[int, int]] = [(0, 0)]
@@ -51,7 +52,7 @@ def _check_selectors(selectors: list[Selector], node: DOMNode) -> bool:
         if selector_index == selector_count or node_index == path_count:
             pop()
         else:
-            path_node = css_path[node_index]
+            path_node = css_path_nodes[node_index]
             selector = selectors[selector_index]
             if selector.combinator == DESCENDENT:
                 # Find a matching descendent

@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from typing import Iterator, overload, TYPE_CHECKING
-from weakref import ref
+from typing import TYPE_CHECKING, Iterator, Sequence, overload
 
 import rich.repr
 
 if TYPE_CHECKING:
-    from .dom import DOMNode
+    from .widget import Widget
 
 
-@rich.repr.auto
-class NodeList:
+@rich.repr.auto(angular=True)
+class NodeList(Sequence):
     """
     A container for widgets that forms one level of hierarchy.
 
@@ -19,60 +18,71 @@ class NodeList:
     """
 
     def __init__(self) -> None:
-        self._node_refs: list[ref[DOMNode]] = []
-        self.__nodes: list[DOMNode] | None = []
+        # The nodes in the list
+        self._nodes: list[Widget] = []
+        self._nodes_set: set[Widget] = set()
+        # Increments when list is updated (used for caching)
+        self._updates = 0
+
+    def __bool__(self) -> bool:
+        return bool(self._nodes)
+
+    def __length_hint__(self) -> int:
+        return len(self._nodes)
 
     def __rich_repr__(self) -> rich.repr.Result:
-        yield self._widgets
+        yield self._nodes
 
     def __len__(self) -> int:
-        return len(self._widgets)
+        return len(self._nodes)
 
-    def __contains__(self, widget: DOMNode) -> bool:
-        return widget in self._widgets
+    def __contains__(self, widget: Widget) -> bool:
+        return widget in self._nodes
 
-    @property
-    def _widgets(self) -> list[DOMNode]:
-        if self.__nodes is None:
-            self.__nodes = list(
-                filter(None, [widget_ref() for widget_ref in self._node_refs])
-            )
-        return self.__nodes
+    def _append(self, widget: Widget) -> None:
+        """Append a Widget.
 
-    def _prune(self) -> None:
-        """Remove expired references."""
-        self._node_refs[:] = filter(
-            None,
-            [
-                None if widget_ref() is None else widget_ref
-                for widget_ref in self._node_refs
-            ],
-        )
+        Args:
+            widget (Widget): A widget.
+        """
+        if widget not in self._nodes_set:
+            self._nodes.append(widget)
+            self._nodes_set.add(widget)
+            self._updates += 1
 
-    def _append(self, widget: DOMNode) -> None:
-        if widget not in self._widgets:
-            self._node_refs.append(ref(widget))
-            self.__nodes = None
+    def _remove(self, widget: Widget) -> None:
+        """Remove a widget from the list.
+
+        Removing a widget not in the list is a null-op.
+
+        Args:
+            widget (Widget): A Widget in the list.
+        """
+        if widget in self._nodes_set:
+            del self._nodes[self._nodes.index(widget)]
+            self._nodes_set.remove(widget)
+            self._updates += 1
 
     def _clear(self) -> None:
-        del self._node_refs[:]
-        self.__nodes = None
+        """Clear the node list."""
+        if self._nodes:
+            self._nodes.clear()
+            self._nodes_set.clear()
+            self._updates += 1
 
-    def __iter__(self) -> Iterator[DOMNode]:
-        for widget_ref in self._node_refs:
-            widget = widget_ref()
-            if widget is not None:
-                yield widget
+    def __iter__(self) -> Iterator[Widget]:
+        return iter(self._nodes)
+
+    def __reversed__(self) -> Iterator[Widget]:
+        return reversed(self._nodes)
 
     @overload
-    def __getitem__(self, index: int) -> DOMNode:
+    def __getitem__(self, index: int) -> Widget:
         ...
 
     @overload
-    def __getitem__(self, index: slice) -> list[DOMNode]:
+    def __getitem__(self, index: slice) -> list[Widget]:
         ...
 
-    def __getitem__(self, index: int | slice) -> DOMNode | list[DOMNode]:
-        self._prune()
-        assert self._widgets is not None
-        return self._widgets[index]
+    def __getitem__(self, index: int | slice) -> Widget | list[Widget]:
+        return self._nodes[index]
