@@ -97,6 +97,7 @@ DEFAULT_COLORS = {
 
 
 ComposeResult = Iterable[Widget]
+RenderResult = RenderableType
 
 
 class AppError(Exception):
@@ -151,6 +152,7 @@ class App(Generic[ReturnType], DOMNode):
 
     SCREENS: dict[str, Screen] = {}
 
+    _BASE_PATH: str | None = None
     CSS_PATH: str | None = None
 
     focused: Reactive[Widget | None] = Reactive(None)
@@ -175,6 +177,7 @@ class App(Generic[ReturnType], DOMNode):
             markup=False,
             highlight=False,
             emoji=False,
+            legacy_windows=False,
         )
         self.error_console = Console(markup=False, stderr=True)
         self.driver_class = driver_class or self.get_driver_class()
@@ -230,12 +233,6 @@ class App(Generic[ReturnType], DOMNode):
             else None
         )
         self._screenshot: str | None = None
-
-    def __init_subclass__(
-        cls, css_path: str | None = None, inherit_css: bool = True
-    ) -> None:
-        super().__init_subclass__(inherit_css=inherit_css)
-        cls.CSS_PATH = css_path
 
     title: Reactive[str] = Reactive("Textual")
     sub_title: Reactive[str] = Reactive("")
@@ -562,6 +559,7 @@ class App(Generic[ReturnType], DOMNode):
             force_terminal=True,
             color_system="truecolor",
             record=True,
+            legacy_windows=False,
         )
         screen_render = self.screen._compositor.render(full=True)
         console.print(screen_render)
@@ -579,7 +577,7 @@ class App(Generic[ReturnType], DOMNode):
             filename (str | None, optional): Filename of SVG screenshot, or None to auto-generate
                 a filename with the date and time. Defaults to None.
             path (str, optional): Path to directory for output. Defaults to current working directory.
-            time_format(str, optional): Time format to use if filename is None. Defaults to "%Y-%m-%d %X %f".
+            time_format (str, optional): Time format to use if filename is None. Defaults to "%Y-%m-%d %X %f".
 
         Returns:
             str: Filename of screenshot.
@@ -669,6 +667,9 @@ class App(Generic[ReturnType], DOMNode):
                                 events.Key(self, key, key if len(key) == 1 else None)
                             )
                             await asyncio.sleep(0.01)
+
+                    await app._animator.wait_for_idle()
+
                     if screenshot:
                         self._screenshot = self.export_screenshot(
                             title=screenshot_title
@@ -1209,6 +1210,8 @@ class App(Generic[ReturnType], DOMNode):
         apply_stylesheet = self.stylesheet.apply
 
         for widget_id, widget in name_widgets:
+            if not isinstance(widget, Widget):
+                raise AppError(f"Can't register {widget!r}; expected a Widget instance")
             if widget not in self._registry:
                 if widget_id is not None:
                     widget.id = widget_id
@@ -1299,21 +1302,6 @@ class App(Generic[ReturnType], DOMNode):
                 self._end_update()
             console.file.flush()
 
-    def measure(self, renderable: RenderableType, max_width=100_000) -> int:
-        """Get the optimal width for a widget or renderable.
-
-        Args:
-            renderable (RenderableType): A renderable (including Widget)
-            max_width ([type], optional): Maximum width. Defaults to 100_000.
-
-        Returns:
-            int: Number of cells required to render.
-        """
-        measurement = Measurement.get(
-            self.console, self.console.options.update(max_width=max_width), renderable
-        )
-        return measurement.maximum
-
     def get_widget_at(self, x: int, y: int) -> tuple[Widget, Region]:
         """Get the widget under the given coordinates.
 
@@ -1328,7 +1316,8 @@ class App(Generic[ReturnType], DOMNode):
 
     def bell(self) -> None:
         """Play the console 'bell'."""
-        self.console.bell()
+        if not self.is_headless:
+            self.console.bell()
 
     async def press(self, key: str) -> bool:
         """Handle a key press.

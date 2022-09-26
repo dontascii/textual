@@ -6,7 +6,7 @@ By the end of this page you should have a solid understanding of app development
 
 !!! quote
 
-    I've always thought the secret sauce in making a popular framework is for it to be fun.
+    If you want people to build things, make it fun.
     
     &mdash; **Will McGugan** (creator of Rich and Textual)
 
@@ -200,11 +200,11 @@ While it's possible to set all styles for an app this way, it is rarely necessar
 
 Let's add a CSS file to our application.
 
-```python title="stopwatch03.py" hl_lines="37"
+```python title="stopwatch03.py" hl_lines="24"
 --8<-- "docs/examples/tutorial/stopwatch03.py"
 ```
 
-Adding the `css_path` attribute to the app constructor tells Textual to load the following file when it starts the app:
+Adding the `CSS_PATH` class variable tells Textual to load the following file when it starts the app:
 
 ```sass title="stopwatch03.css" 
 --8<-- "docs/examples/tutorial/stopwatch03.css"
@@ -224,7 +224,7 @@ CSS files contain a number of _declaration blocks_. Here's the first such block 
 ```sass 
 Stopwatch {
     layout: horizontal;
-    background: $panel-darken-1;
+    background: $boost;
     height: 5;
     padding: 1;
     margin: 1;
@@ -240,7 +240,7 @@ Here's how this CSS code changes how the `Stopwatch` widget is displayed.
 </div>
 
 - `layout: horizontal` aligns child widgets horizontally from left to right.
-- `background: $panel-darken-1` sets the background color to `$panel-darken-1`. The `$` prefix picks a pre-defined color from the builtin theme. There are other ways to specify colors such as `"blue"` or `rgb(20,46,210)`.
+- `background: $boost` sets the background color to `$boost`. The `$` prefix picks a pre-defined color from the builtin theme. There are other ways to specify colors such as `"blue"` or `rgb(20,46,210)`.
 - `height: 5` sets the height of our widget to 5 lines of text.
 - `padding: 1` sets a padding of 1 cell around the child widgets.
 - `margin: 1` sets a margin of 1 cell around the Stopwatch widget to create a little space between widgets in the list.
@@ -329,7 +329,7 @@ The `on_button_pressed` method is an *event handler*. Event handlers are methods
 
 If you run "stopwatch04.py" now you will be able to toggle between the two states by clicking the first button:
 
-```{.textual path="docs/examples/tutorial/stopwatch04.py" title="stopwatch04.py" press="tab,tab,tab,enter,_,_"}
+```{.textual path="docs/examples/tutorial/stopwatch04.py" title="stopwatch04.py" press="tab,tab,tab,_,enter,_,_,_"}
 ```
 
 ## Reactive attributes
@@ -423,7 +423,7 @@ To add a new child widget call `mount()` on the parent. To remove a widget, call
 
 Let's use these to implement adding and removing stopwatches to our app.
 
-```python title="stopwatch.py" hl_lines="76-77 86-90 92-96"
+```python title="stopwatch.py" hl_lines="78-79 88-92 94-98"
 --8<-- "docs/examples/tutorial/stopwatch.py"
 ```
 

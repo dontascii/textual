@@ -45,6 +45,7 @@ class Footer(Widget):
     def __init__(self) -> None:
         super().__init__()
         self._key_text: Text | None = None
+        self.auto_links = False
 
     highlight_key: Reactive[str | None] = Reactive(None)
 
@@ -56,7 +57,6 @@ class Footer(Widget):
         watch(self.app, "focused", self._focus_changed)
 
     def _focus_changed(self, focused: Widget | None) -> None:
-        self.log("FOCUS CHANGED", focused)
         self._key_text = None
         self.refresh()
 

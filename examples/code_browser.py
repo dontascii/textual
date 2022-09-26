@@ -1,3 +1,12 @@
+"""
+Code browser example.
+
+Run with:
+
+    python code_browser.py PATH
+
+"""
+
 import sys
 
 from rich.syntax import Syntax
@@ -12,6 +21,7 @@ from textual.widgets import DirectoryTree, Footer, Header, Static
 class CodeBrowser(App):
     """Textual code browser app."""
 
+    CSS_PATH = "code_browser.css"
     BINDINGS = [
         ("f", "toggle_files", "Toggle Files"),
         ("q", "quit", "Quit"),
@@ -29,7 +39,7 @@ class CodeBrowser(App):
         yield Header()
         yield Container(
             Vertical(DirectoryTree(path), id="tree-view"),
-            Vertical(Static(id="code"), id="code-view"),
+            Vertical(Static(id="code", expand=True), id="code-view"),
         )
         yield Footer()
 
@@ -40,7 +50,7 @@ class CodeBrowser(App):
             syntax = Syntax.from_path(
                 event.path,
                 line_numbers=True,
-                word_wrap=True,
+                word_wrap=False,
                 indent_guides=True,
                 theme="github-dark",
             )
@@ -53,9 +63,9 @@ class CodeBrowser(App):
             self.sub_title = event.path
 
     def action_toggle_files(self) -> None:
+        """Called in response to key binding."""
         self.show_tree = not self.show_tree
 
 
-app = CodeBrowser(css_path="code_browser.css")
 if __name__ == "__main__":
-    app.run()
+    CodeBrowser().run()
